@@ -1,0 +1,67 @@
+name: Deploy React to IIS (EC2 - HTTP)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React app
+        run: npm run build
+
+      - name: Deploy to EC2 IIS via WinRM (HTTP)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $username = "${{ secrets.EC2_USERNAME }}"
+          $password = "${{ secrets.EC2_PASSWORD }}" | ConvertTo-SecureString -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential($username, $password)
+
+          Write-Host "Creating remote session..."
+
+          $session = New-PSSession `
+            -ComputerName "${{ secrets.EC2_HOST }}" `
+            -Credential $cred `
+            -Authentication Basic `
+            -Port 5985
+
+          Write-Host "Cleaning IIS wwwroot..."
+
+          Invoke-Command -Session $session -ScriptBlock {
+              if (Test-Path "C:\inetpub\wwwroot\*") {
+                  Remove-Item -Recurse -Force "C:\inetpub\wwwroot\*" -ErrorAction SilentlyContinue
+              }
+          }
+
+          Write-Host "Copying build files..."
+
+          Copy-Item -Path "build\*" `
+            -Destination "C:\inetpub\wwwroot" `
+            -Recurse `
+            -ToSession $session
+
+          Write-Host "Restarting IIS..."
+
+          Invoke-Command -Session $session -ScriptBlock {
+              iisreset
+          }
+
+          Remove-PSSession $session
+
+          Write-Host "Deployment completed successfully!"
