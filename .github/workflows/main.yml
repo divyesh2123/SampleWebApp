@@ -43,12 +43,12 @@ jobs:
 
           Write-Host "===== START DEPLOYMENT ====="
 
-          # ✅ Configure WinRM client (IMPORTANT FIX)
+          # Configure WinRM client
           winrm set winrm/config/client '@{AllowUnencrypted="true"}'
           winrm set winrm/config/client/auth '@{Basic="true"}'
           winrm set winrm/config/client '@{TrustedHosts="*"}'
 
-          Write-Host "WinRM client configured"
+          Write-Host "WinRM configured"
 
           $username = "${{ secrets.EC2_USERNAME }}"
           $passwordPlain = "${{ secrets.EC2_PASSWORD }}"
@@ -85,7 +85,9 @@ jobs:
               }
 
               Write-Host "Copying build files..."
-              Copy-Item -Path "build\*" `
+
+              # ✅ VITE FIX → dist instead of build
+              Copy-Item -Path "dist\*" `
                 -Destination "C:\inetpub\wwwroot" `
                 -Recurse `
                 -ToSession $session
