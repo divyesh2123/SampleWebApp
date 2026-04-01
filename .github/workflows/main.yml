@@ -11,7 +11,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: myapp   # 👈 CHANGE if your app folder name is different
+        working-directory: myapp   # 👈 CHANGE if your React app folder name is different
 
     steps:
       - name: Checkout code
@@ -42,17 +42,22 @@ jobs:
           echo "Listing files..."
           dir
 
-      - name: Deploy to EC2 via WinRM (HTTP - FINAL FIX)
+      - name: Deploy to EC2 via WinRM (HTTP FINAL)
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
 
           Write-Host "===== START DEPLOYMENT ====="
 
-          # ✅ FIX: Enable WinRM client settings on GitHub runner
+          # ✅ Enable WinRM client (GitHub runner)
           Write-Host "Configuring WinRM client..."
           winrm set winrm/config/client '@{AllowUnencrypted="true"}'
           winrm set winrm/config/client/auth '@{Basic="true"}'
+
+          # ✅ REQUIRED FIX (non-domain machine)
+          Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*"
+
+          Write-Host "WinRM client configured"
 
           $username = "${{ secrets.EC2_USERNAME }}"
           $passwordPlain = "${{ secrets.EC2_PASSWORD }}"
