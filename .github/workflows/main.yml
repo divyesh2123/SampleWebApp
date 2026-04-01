@@ -11,7 +11,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: myapp   # 👈 CHANGE if your React app folder name is different
+        working-directory: myapp   # 👈 change if your folder name is different
 
     steps:
       - name: Checkout code
@@ -28,19 +28,13 @@ jobs:
           npm -v
 
       - name: Install dependencies
-        run: |
-          echo "Installing dependencies..."
-          npm install
+        run: npm install
 
       - name: Build React app
-        run: |
-          echo "Building app..."
-          npm run build
+        run: npm run build
 
       - name: Verify build output
-        run: |
-          echo "Listing files..."
-          dir
+        run: dir
 
       - name: Deploy to EC2 via WinRM (HTTP FINAL)
         shell: powershell
@@ -49,13 +43,10 @@ jobs:
 
           Write-Host "===== START DEPLOYMENT ====="
 
-          # ✅ Enable WinRM client (GitHub runner)
-          Write-Host "Configuring WinRM client..."
+          # ✅ Configure WinRM client (IMPORTANT FIX)
           winrm set winrm/config/client '@{AllowUnencrypted="true"}'
           winrm set winrm/config/client/auth '@{Basic="true"}'
-
-          # ✅ REQUIRED FIX (non-domain machine)
-          Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*"
+          winrm set winrm/config/client '@{TrustedHosts="*"}'
 
           Write-Host "WinRM client configured"
 
@@ -63,13 +54,12 @@ jobs:
           $passwordPlain = "${{ secrets.EC2_PASSWORD }}"
           $hostName = "${{ secrets.EC2_HOST }}"
 
-          Write-Host "Connecting to: $hostName"
+          Write-Host "Connecting to $hostName"
 
           $password = $passwordPlain | ConvertTo-SecureString -AsPlainText -Force
           $cred = New-Object System.Management.Automation.PSCredential($username, $password)
 
           try {
-              Write-Host "Creating session..."
               $session = New-PSSession `
                 -ComputerName $hostName `
                 -Credential $cred `
@@ -85,16 +75,13 @@ jobs:
           }
 
           try {
-              Write-Host "Testing connection..."
               Invoke-Command -Session $session -ScriptBlock {
                   hostname
               }
 
               Write-Host "Cleaning IIS folder..."
               Invoke-Command -Session $session -ScriptBlock {
-                  if (Test-Path "C:\inetpub\wwwroot\*") {
-                      Remove-Item -Recurse -Force "C:\inetpub\wwwroot\*" -ErrorAction SilentlyContinue
-                  }
+                  Remove-Item -Recurse -Force "C:\inetpub\wwwroot\*" -ErrorAction SilentlyContinue
               }
 
               Write-Host "Copying build files..."
