@@ -9,6 +9,10 @@ jobs:
   deploy:
     runs-on: windows-latest
 
+    defaults:
+      run:
+        working-directory: myapp   # 👈 IMPORTANT FIX
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,19 +49,12 @@ jobs:
 
           Write-Host "===== START DEPLOYMENT ====="
 
-          Write-Host "Step 1: Reading secrets"
           $username = "${{ secrets.EC2_USERNAME }}"
           $passwordPlain = "${{ secrets.EC2_PASSWORD }}"
           $hostName = "${{ secrets.EC2_HOST }}"
 
-          Write-Host "Host: $hostName"
-          Write-Host "Username: $username"
-
-          Write-Host "Step 2: Creating credential"
           $password = $passwordPlain | ConvertTo-SecureString -AsPlainText -Force
           $cred = New-Object System.Management.Automation.PSCredential($username, $password)
-
-          Write-Host "Step 3: Creating remote session"
 
           try {
             $session = New-PSSession `
@@ -66,69 +63,34 @@ jobs:
               -Authentication Basic `
               -Port 5985
 
-            Write-Host "✅ Session created successfully"
+            Write-Host "✅ Session created"
           }
           catch {
-            Write-Host "❌ Failed to create session"
+            Write-Host "❌ Session failed"
             Write-Host $_
             exit 1
           }
-
-          Write-Host "Step 4: Testing connection"
-
-          try {
-            Invoke-Command -Session $session -ScriptBlock {
-                Write-Output "✅ Connected to EC2"
-            }
-          }
-          catch {
-            Write-Host "❌ Cannot run command on EC2"
-            Write-Host $_
-            exit 1
-          }
-
-          Write-Host "Step 5: Cleaning IIS folder"
 
           try {
             Invoke-Command -Session $session -ScriptBlock {
                 Remove-Item -Recurse -Force "C:\inetpub\wwwroot\*" -ErrorAction SilentlyContinue
             }
-            Write-Host "✅ Folder cleaned"
-          }
-          catch {
-            Write-Host "❌ Failed to clean folder"
-            Write-Host $_
-          }
 
-          Write-Host "Step 6: Copying build files"
-
-          try {
             Copy-Item -Path "build\*" `
               -Destination "C:\inetpub\wwwroot" `
               -Recurse `
               -ToSession $session
 
-            Write-Host "✅ Files copied"
+            Invoke-Command -Session $session -ScriptBlock {
+                iisreset
+            }
+
+            Write-Host "✅ Deployment success"
           }
           catch {
-            Write-Host "❌ Copy failed"
+            Write-Host "❌ Deployment failed"
             Write-Host $_
             exit 1
           }
 
-          Write-Host "Step 7: Restarting IIS"
-
-          try {
-            Invoke-Command -Session $session -ScriptBlock {
-                iisreset
-            }
-            Write-Host "✅ IIS restarted"
-          }
-          catch {
-            Write-Host "❌ IIS restart failed"
-            Write-Host $_
-          }
-
           Remove-PSSession $session
-
-          Write-Host "===== DEPLOYMENT FINISHED ====="
