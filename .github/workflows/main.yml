@@ -1,4 +1,4 @@
-name: Deploy React to IIS (EC2 - HTTP)
+name: Deploy React to IIS (EC2 Debug)
 
 on:
   push:
@@ -18,50 +18,117 @@ jobs:
         with:
           node-version: '22.19.0'
 
+      - name: Check Node Version
+        run: |
+          node -v
+          npm -v
+
       - name: Install dependencies
-        run: npm install
+        run: |
+          echo "Installing dependencies..."
+          npm install
 
       - name: Build React app
-        run: npm run build
+        run: |
+          echo "Building app..."
+          npm run build
 
-      - name: Deploy to EC2 IIS via WinRM (HTTP)
+      - name: List Build Folder
+        run: |
+          echo "Listing build folder..."
+          dir
+
+      - name: Deploy to EC2 IIS via WinRM (DEBUG)
         shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = "Continue"
 
+          Write-Host "===== START DEPLOYMENT ====="
+
+          Write-Host "Step 1: Reading secrets"
           $username = "${{ secrets.EC2_USERNAME }}"
-          $password = "${{ secrets.EC2_PASSWORD }}" | ConvertTo-SecureString -AsPlainText -Force
+          $passwordPlain = "${{ secrets.EC2_PASSWORD }}"
+          $hostName = "${{ secrets.EC2_HOST }}"
+
+          Write-Host "Host: $hostName"
+          Write-Host "Username: $username"
+
+          Write-Host "Step 2: Creating credential"
+          $password = $passwordPlain | ConvertTo-SecureString -AsPlainText -Force
           $cred = New-Object System.Management.Automation.PSCredential($username, $password)
 
-          Write-Host "Creating remote session..."
+          Write-Host "Step 3: Creating remote session"
 
-          $session = New-PSSession `
-            -ComputerName "${{ secrets.EC2_HOST }}" `
-            -Credential $cred `
-            -Authentication Basic `
-            -Port 5985
+          try {
+            $session = New-PSSession `
+              -ComputerName $hostName `
+              -Credential $cred `
+              -Authentication Basic `
+              -Port 5985
 
-          Write-Host "Cleaning IIS wwwroot..."
-
-          Invoke-Command -Session $session -ScriptBlock {
-              if (Test-Path "C:\inetpub\wwwroot\*") {
-                  Remove-Item -Recurse -Force "C:\inetpub\wwwroot\*" -ErrorAction SilentlyContinue
-              }
+            Write-Host "✅ Session created successfully"
+          }
+          catch {
+            Write-Host "❌ Failed to create session"
+            Write-Host $_
+            exit 1
           }
 
-          Write-Host "Copying build files..."
+          Write-Host "Step 4: Testing connection"
 
-          Copy-Item -Path "build\*" `
-            -Destination "C:\inetpub\wwwroot" `
-            -Recurse `
-            -ToSession $session
+          try {
+            Invoke-Command -Session $session -ScriptBlock {
+                Write-Output "✅ Connected to EC2"
+            }
+          }
+          catch {
+            Write-Host "❌ Cannot run command on EC2"
+            Write-Host $_
+            exit 1
+          }
 
-          Write-Host "Restarting IIS..."
+          Write-Host "Step 5: Cleaning IIS folder"
 
-          Invoke-Command -Session $session -ScriptBlock {
-              iisreset
+          try {
+            Invoke-Command -Session $session -ScriptBlock {
+                Remove-Item -Recurse -Force "C:\inetpub\wwwroot\*" -ErrorAction SilentlyContinue
+            }
+            Write-Host "✅ Folder cleaned"
+          }
+          catch {
+            Write-Host "❌ Failed to clean folder"
+            Write-Host $_
+          }
+
+          Write-Host "Step 6: Copying build files"
+
+          try {
+            Copy-Item -Path "build\*" `
+              -Destination "C:\inetpub\wwwroot" `
+              -Recurse `
+              -ToSession $session
+
+            Write-Host "✅ Files copied"
+          }
+          catch {
+            Write-Host "❌ Copy failed"
+            Write-Host $_
+            exit 1
+          }
+
+          Write-Host "Step 7: Restarting IIS"
+
+          try {
+            Invoke-Command -Session $session -ScriptBlock {
+                iisreset
+            }
+            Write-Host "✅ IIS restarted"
+          }
+          catch {
+            Write-Host "❌ IIS restart failed"
+            Write-Host $_
           }
 
           Remove-PSSession $session
 
-          Write-Host "Deployment completed successfully!"
+          Write-Host "===== DEPLOYMENT FINISHED ====="
