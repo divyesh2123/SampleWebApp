@@ -9,7 +9,7 @@ function App() {
 
   return (
     <>
-    I am from weltec  Vadodara and
+    I am from weltec  Vadodara and example
     </>
   )
 }
